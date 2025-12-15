@@ -4,7 +4,7 @@ set -euo pipefail
 # -------------------------------
 # CONFIG
 # -------------------------------
-OUTPUT_DIR="/home/elliot/Music"
+OUTPUT_DIR="/home/elliot/Dropbox/mp3s"
 MONITOR_SOURCE="alsa_output.pci-0000_00_1f.3.analog-stereo.monitor"
 TMP_WAV="$(mktemp --suffix=.wav)"
 
@@ -32,17 +32,29 @@ if [[ -z "$TITLE" ]]; then
     exit 1
 fi
 
+# Sanitize filename: remove/replace illegal characters
+TITLE=$(echo "$TITLE" | sed 's/[\/\\:*?"<>|]/_/g' | sed 's/^[. ]*//;s/[. ]*$//')
+
 OUTPUT_MP3="$OUTPUT_DIR/$TITLE.mp3"
 
 # -------------------------------
 # CONVERT + FADE
 # -------------------------------
-ffmpeg -loglevel error -y \
+# Get duration of the audio file
+DURATION=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$TMP_WAV")
+# Calculate fade-out start time (duration - 2 seconds)
+FADE_OUT_START=$(echo "$DURATION - 2" | bc)
+
+if ! ffmpeg -loglevel error -y \
   -i "$TMP_WAV" \
-  -af "afade=t=in:d=2,afade=t=out:d=2" \
+  -af "afade=t=in:d=2,afade=t=out:st=$FADE_OUT_START:d=2" \
   -codec:a libmp3lame \
   -b:a 192k \
-  "$OUTPUT_MP3"
+  "$OUTPUT_MP3"; then
+    echo "Error during conversion. Temp file preserved at:"
+    echo "$TMP_WAV"
+    exit 1
+fi
 
 rm -f "$TMP_WAV"
 
