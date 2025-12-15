@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# -------------------------------
+# CONFIG
+# -------------------------------
+OUT_DIR="/home/elliot/Music"
+TMP_DIR="$(mktemp -d)"
+FADE_DURATION=5
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+cleanup() {
+    rm -rf "$TMP_DIR"
+}
+trap cleanup EXIT
+
+mkdir -p "$OUT_DIR"
+
+# -------------------------------
+# PROMPTS
+# -------------------------------
+read -rp "YouTube URL: " URL
+read -rp "Start time (MM:SS, HH:MM:SS, or 'full'): " START
+read -rp "Song title: " TITLE
+
+if [[ -z "$URL" || -z "$START" || -z "$TITLE" ]]; then
+    echo "All required fields must be provided."
+    exit 1
+fi
+
+FULL_MODE=false
+if [[ "$START" == "full" ]]; then
+    FULL_MODE=true
+else
+    read -rp "End time (MM:SS or HH:MM:SS): " END
+    if [[ -z "$END" ]]; then
+        echo "End time is required unless using 'full'."
+        exit 1
+    fi
+fi
+
+# -------------------------------
+# DOWNLOAD AUDIO
+# -------------------------------
+echo "Downloading audio…"
+
+yt-dlp \
+  -f bestaudio \
+  --extract-audio \
+  --audio-format m4a \
+  --print "%(title)s" \
+  --output "$TMP_DIR/audio.%(ext)s" \
+  --cookies "$SCRIPT_DIR/cookies.txt" \
+  "$URL" > "$TMP_DIR/video_title.txt"
+
+VIDEO_TITLE="$(cat "$TMP_DIR/video_title.txt")"
+
+# -------------------------------
+# EXTRACT COVER IMAGE
+# -------------------------------
+echo "Extracting cover image…"
+
+if $FULL_MODE; then
+    ffmpeg -loglevel error -y \
+      -i "$TMP_DIR/audio.m4a" \
+      -frames:v 1 \
+      "$TMP_DIR/cover.jpg"
+else
+    ffmpeg -loglevel error -y \
+      -ss "$START" \
+      -i "$TMP_DIR/audio.m4a" \
+      -frames:v 1 \
+      "$TMP_DIR/cover.jpg"
+fi
+
+# -------------------------------
+# BUILD FFMPEG COMMAND
+# -------------------------------
+echo "Creating MP3…"
+
+if $FULL_MODE; then
+    ffmpeg -loglevel error -y \
+      -i "$TMP_DIR/audio.m4a" \
+      -i "$TMP_DIR/cover.jpg" \
+      -map 0:a \
+      -map 1:v \
+      -c:a libmp3lame \
+      -b:a 192k \
+      -c:v mjpeg \
+      -metadata title="$TITLE" \
+      -metadata artist="$VIDEO_TITLE" \
+      -metadata:s:v title="Album cover" \
+      -metadata:s:v comment="Cover (extracted from video)" \
+      "$OUT_DIR/$TITLE.mp3"
+else
+    START_SEC=$(date -d "1970-01-01 $START" +%s)
+    END_SEC=$(date -d "1970-01-01 $END" +%s)
+    DURATION=$((END_SEC - START_SEC))
+    FADE_OUT_START=$((DURATION - FADE_DURATION))
+
+    ffmpeg -loglevel error -y \
+      -i "$TMP_DIR/audio.m4a" \
+      -i "$TMP_DIR/cover.jpg" \
+      -ss "$START" \
+      -to "$END" \
+      -af "afade=t=in:st=0:d=$FADE_DURATION,afade=t=out:st=$FADE_OUT_START:d=$FADE_DURATION" \
+      -map 0:a \
+      -map 1:v \
+      -c:a libmp3lame \
+      -b:a 192k \
+      -c:v mjpeg \
+      -metadata title="$TITLE" \
+      -metadata artist="$VIDEO_TITLE" \
+      -metadata:s:v title="Album cover" \
+      -metadata:s:v comment="Cover (extracted from video)" \
+      "$OUT_DIR/$TITLE.mp3"
+fi
+
+echo "Saved:"
+echo "$OUT_DIR/$TITLE.mp3"
