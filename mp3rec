@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# -------------------------------
+# CONFIG
+# -------------------------------
+OUTPUT_DIR="/home/elliot/Music"
+MONITOR_SOURCE="alsa_output.pci-0000_00_1f.3.analog-stereo.monitor"
+TMP_WAV="$(mktemp --suffix=.wav)"
+
+# -------------------------------
+# RECORD
+# -------------------------------
+echo "Recording system audio…"
+echo "Press 'q' to stop recording."
+
+ffmpeg -y -loglevel error \
+  -f pulse \
+  -i "$MONITOR_SOURCE" \
+  "$TMP_WAV"
+
+echo "Recording stopped."
+
+# -------------------------------
+# PROMPT FOR NAME
+# -------------------------------
+read -rp "Enter song name: " TITLE
+
+if [[ -z "$TITLE" ]]; then
+    echo "No title provided. Aborting."
+    rm -f "$TMP_WAV"
+    exit 1
+fi
+
+OUTPUT_MP3="$OUTPUT_DIR/$TITLE.mp3"
+
+# -------------------------------
+# CONVERT + FADE
+# -------------------------------
+ffmpeg -loglevel error -y \
+  -i "$TMP_WAV" \
+  -af "afade=t=in:d=2,afade=t=out:d=2" \
+  -codec:a libmp3lame \
+  -b:a 192k \
+  "$OUTPUT_MP3"
+
+rm -f "$TMP_WAV"
+
+echo "Saved to:"
+echo "$OUTPUT_MP3"
+
+# symbolic link created at ln -s /home/elliot/Repos/04-mp3-downloader/mp3rec ~/bin/mp3rec
