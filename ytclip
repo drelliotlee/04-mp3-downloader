@@ -50,7 +50,7 @@ yt-dlp \
   --audio-format m4a \
   --print "%(title)s" \
   --output "$TMP_DIR/audio.%(ext)s" \
-  --cookies "$SCRIPT_DIR/cookies.txt" \
+  --cookies-from-browser firefox \
   "$URL" > "$TMP_DIR/video_title.txt"
 
 VIDEO_TITLE="$(cat "$TMP_DIR/video_title.txt")"
@@ -113,6 +113,7 @@ else
       -metadata artist="$VIDEO_TITLE" \
       -metadata:s:v title="Album cover" \
       -metadata:s:v comment="Cover (extracted from video)" \
+      
       "$OUT_DIR/$TITLE.mp3"
 fi
 
